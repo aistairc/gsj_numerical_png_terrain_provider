@@ -2,7 +2,7 @@
 
 ## 概要
 
-NumericalPngTerrainProvider および ExtendedNumericalPngTerrainProvider (以後、本プログラムと呼称します) は、国立研究開発法人 産業技術総合研究所 地質情報研究部門 シームレス地質情報研究グループが運用する [標高タイルサービス](https://tiles.gsj.jp/tiles/elev/tiles_new.html) の各種データを、オープンソースの三次元地理空間可視化プラットフォームである [CesiumJS](https://www.cesium.com/platform/cesiumjs/) の地形表現 (Terrain (Digtal Elevation Model)) のデータソースとして利用可能とするものです。
+NumericalPngTerrainProvider および ExtendedNumericalPngTerrainProvider (以後、本プログラムと呼称します) は、国立研究開発法人 産業技術総合研究所 地質情報研究部門 シームレス地質情報研究グループが運用する [標高タイルサービス](https://tiles.gsj.jp/tiles/elev/tiles.html) の各種データを、オープンソースの三次元地理空間可視化プラットフォームである [CesiumJS](https://www.cesium.com/platform/cesiumjs/) の地形表現 (Terrain (Digtal Elevation Model)) のデータソースとして利用可能とするものです。
 
 ## 構成
 
@@ -67,7 +67,7 @@ NumericalPngTerrainProvider もしくは ExtendedNumericalPngTerrainProvider の
   });
   ```
 
-- 国土地理院の [基盤地図情報数値標高モデル (DEM10B)](https://tiles.gsj.jp/tiles/elev/tiles_new.html) を地形表現として使用し、著作権情報に国土地理院の情報を指定する。
+- 国土地理院の [基盤地図情報数値標高モデル (DEM10B)](https://tiles.gsj.jp/tiles/elev/tiles.html) を地形表現として使用し、著作権情報に国土地理院の情報を指定する。
 
   ```
   const viewer = new Cesium.Viewer( 'app', {
