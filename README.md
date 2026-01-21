@@ -7,7 +7,7 @@ NumericalPngTerrainProvider および ExtendedNumericalPngTerrainProvider (以�
 ## 構成
 
 本プログラムは、標高タイルサービスのデータである標高数値 PNG タイルを、CesiumJS のデータとして利用可能とするための 2 種類のクラスを提供します。
-動作確認は CesiumJS version 1.110 で実施しています。
+動作確認は CesiumJS version 1.136 で実施しています。
 
 それぞれの概要を以下に記します。
 
