@@ -45,27 +45,16 @@ class ExtendedNumericalPngTerrainProvider extends NumericalPngTerrainProvider {
 		//----------------------------------------------------------------------
 		//追加オプションをメンバ変数に登録
 		//ジオイド高タイルURLをテンプレートの指定
-		this.geoidUrl	= Cesium.defaultValue(
-			opts.geoidUrl,
-			'https://tiles.gsj.jp/tiles/elev/gsigeoid/{z}/{y}/{x}.png'
-		);
+		this.geoidUrl	= opts.geoidUrl ??
+			'https://tiles.gsj.jp/tiles/elev/gsigeoid/{z}/{y}/{x}.png';
 		//デフォルトはジオイド高を反映しない
-		this.useGeoid	= Cesium.defaultValue( opts.useGeoid, false );
+		this.useGeoid	= opts.useGeoid ?? false;
 		//ジオイド高メートル換算係数
-		this.geoidHeightScale	= Cesium.defaultValue(
-			opts.geoidHeightScale,
-			0.0001
-		);
+		this.geoidHeightScale	= opts.geoidHeightScale ?? 0.0001;
 		//探索ズームレベル設定（標高）
-		this.japanCoveredLevel	= Cesium.defaultValue(
-			opts.japanCoveredLevel,
-			14
-		);
+		this.japanCoveredLevel	= opts.japanCoveredLevel ?? 14;
 		//探索ズームレベル設定（ジオイド高）
-		this.geoidJapanCoveredLevel	= Cesium.defaultValue(
-			opts.geoidJapanCoveredLevel,
-			8
-		);
+		this.geoidJapanCoveredLevel	= opts.geoidJapanCoveredLevel ?? 8;
 	}
 
 	//**************************************************************************

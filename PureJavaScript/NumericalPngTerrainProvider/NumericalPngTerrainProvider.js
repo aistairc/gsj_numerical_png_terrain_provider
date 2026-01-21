@@ -33,7 +33,7 @@ class TileCacher {
 	constructor ( size ) {
 		//----------------------------------------------------------------------
 		//キャッシュを格納する配列の初期化とキャッシュの上限を設定
-		this.size	= Cesium.defaultValue( size, 256 );
+		this.size	= size ?? 256;
 	}
 
 	//**************************************************************************
@@ -180,13 +180,12 @@ class NumericalPngTerrainProvider {
 	constructor ( options ) {
 		//----------------------------------------------------------------------
 		//引数の整理
-		const opts	= Cesium.defaultValue( options, {});
+		const opts	= options ?? {};
 		//----------------------------------------------------------------------
 		//メンバ変数初期値設定
-		this.url	= Cesium.defaultValue(
-			// opts.url, 'https://tiles.gsj.jp/tiles/elev/mixed/{z}/{y}/{x}.png'
-			opts.url, 'https://tiles.gsj.jp/tiles/elev/land/{z}/{y}/{x}.png'
-		);
+		this.url	=
+			// opts.url ?? 'https://tiles.gsj.jp/tiles/elev/mixed/{z}/{y}/{x}.png';
+			opts.url ?? 'https://tiles.gsj.jp/tiles/elev/land/{z}/{y}/{x}.png';
 		this.credit	= typeof opts.credit === 'string'
 		? new Cesium.Credit( opts.credit )
 		: opts.credit instanceof Cesium.Credit
@@ -196,20 +195,20 @@ class NumericalPngTerrainProvider {
 			'Seamless Elevation Tiles',
 			'</a>'
 		].join( '' ));
-		this.ellipsoid		= Cesium.defaultValue( opts.ellipsoid, Cesium.Ellipsoid.WGS84 );
-		this.tileWidth		= Cesium.defaultValue( opts.tileWidth, 256 );
-		this.heightScale	= Cesium.defaultValue( opts.heightScale, 0.01 );
-		this.maximumLevel	= Cesium.defaultValue( opts.maximumLevel, 14 );
+		this.ellipsoid		= opts.ellipsoid ?? Cesium.Ellipsoid.WGS84;
+		this.tileWidth		= opts.tileWidth ?? 256;
+		this.heightScale	= opts.heightScale ?? 0.01;
+		this.maximumLevel	= opts.maximumLevel ?? 14;
 		this.heightInvalidValue	= opts.heightInvalidValue === void( 0 )
 		? -8388608
 		: opts.heightInvalidValue === null
 		? 0
 		: opts.heightInvalidValue;
-		this.hasVertexNormals	= Cesium.defaultValue( opts.useVertexNormals, false );
-		this.heightmapWidth	= Cesium.defaultValue( opts.heightmapWidth, 65 );
-		// this.zeroRectangleLimit	= Cesium.defaultValue( opts.zeroRectangleLimit, Math.PI / 180 * 0.5 );
-		this.zeroRectangleLimit	= Cesium.defaultValue( opts.zeroRectangleLimit, false );
-		const cacheSize		= Cesium.defaultValue( opts.cacheSize, 100 );
+		this.hasVertexNormals	= opts.useVertexNormals ?? false;
+		this.heightmapWidth	= opts.heightmapWidth ?? 65;
+		// this.zeroRectangleLimit	= opts.zeroRectangleLimit ?? (Math.PI / 180 * 0.5);
+		this.zeroRectangleLimit	= opts.zeroRectangleLimit ?? false;
+		const cacheSize		= opts.cacheSize ?? 100;
 		//----------------------------------------------------------------------
 		//標高マップの頂点インデックスを16ビットに抑える
 		if ( this.heightmapWidth > 256 ) {
