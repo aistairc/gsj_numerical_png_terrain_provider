@@ -39,17 +39,27 @@ interface TileCacheElement {
 	x: number,
 	y: number,
 	level: number,
-	timestamp: number,
 	value: object,
 };
 
 //******************************************************************************
 //タイルシステムのキャッシングシステム
 //TileCacherクラス
+//配列ベースのFIFOキャッシュ（挿入順）。要素数は最大でも数百件程度（cacheSize）であり、
+//文字列キーを作ってMapでハッシュ探索するより、単純な数値比較の線形探索の方が
+//実測で高速だったため（文字列生成・ハッシュ計算のコストが線形探索を上回る）、
+//あえて配列＋線形探索を採用している。
+//add()はキャッシュミス時にしか呼ばれないため、get()で「最終アクセス順」まで
+//厳密に並び替える必要性は薄い。get()での並び替え（splice+push）は、同一キーへの
+//連続アクセスのたびに末尾へ再配置→次回また末尾までの走査が必要、という自己矛盾した
+//コストを生むため、あえて行わない（get()は読み取り専用・不変）。
+//そのため上限超過時の破棄は「最終アクセスが古い順」ではなく「挿入が古い順」になる。
+//値のディープコピーは行わない（呼び出し側で必要な場合は呼び出し側で複製する）ため、
+//キャッシュする値は再利用しても問題のない軽量なデータ（terrain配列など）を想定する。
 class TileCacher {
 	//**************************************************************************
 	//メンバ変数
-	caches: Array < TileCacheElement > = [];	//キャッシュ格納
+	caches: Array < TileCacheElement > = [];	//キャッシュ格納（先頭が最古、末尾が最新）
 	size: number;	//キャッシュ上限数
 
 	//**************************************************************************
@@ -61,6 +71,24 @@ class TileCacher {
 		//----------------------------------------------------------------------
 		//キャッシュを格納する配列の初期化とキャッシュの上限を設定
 		this.size	= size ?? 256;
+	}
+
+	//**************************************************************************
+	//タイル座標が合致する要素のインデックスを探す
+	/*
+		@param	number	: x coordinate of tile
+		@param	number	: y coordinate of tile
+		@param	number	: level coordinate of tile
+		@return	number	: 見つかったインデックス（見つからなければ-1）
+	*/
+	indexOf (
+		x: number,
+		y: number,
+		level: number
+	): number {
+		return this.caches.findIndex(( element ) => {
+			return element.x === x && element.y === y && element.level === level;
+		});
 	}
 
 	//**************************************************************************
@@ -77,25 +105,11 @@ class TileCacher {
 		level: number
 	) {
 		//----------------------------------------------------------------------
-		//タイル座標が合致するデータを探し、見つかればタイムスタンプを更新する
-		const match	= this.caches.find(( element ) => {
-			const match	= element.x === x
-			&& element.y === y
-			&& element.level === level;
-			if ( match ) {
-				element.timestamp	= Date.now();
-			}
-			return match;
-		});
+		//該当要素のインデックスを探す
+		const index	= this.indexOf( x, y, level );
 		//----------------------------------------------------------------------
-		//結果を返す：処理中に要素が破棄される可能性があるため多重チェック
-		return match === void( 0 )
-		? void( 0 )
-		: typeof match === 'object' ?? !Array.isArray( match )
-		? void( 0 )
-		: match.value === void( 0 )
-		? void( 0 )
-		: structuredClone( match.value );
+		//該当がなければundefinedを返す。あれば値をそのまま返す（複製・並び替えはしない）
+		return index === -1 ? void( 0 ) : this.caches[ index ].value;
 	}
 
 	//**************************************************************************
@@ -114,49 +128,19 @@ class TileCacher {
 		value: object
 	) {
 		//----------------------------------------------------------------------
-		//タイムスタンプを決める
-		const timestamp	= Date.now();
-		//----------------------------------------------------------------------
-		//タイル座標が合致する要素の取得を試みる
-		const element	= this.caches.find(( element ) => {
-			//タイル座標の合致を調べる
-			const match	= element.x === x
-			&& element.y === y
-			&& element.level === level;
-			//タイル座標の合致があれば値とタイムスタンプを上書きする
-			if ( match ) {
-				element.timestamp	= timestamp;
-				element.value	= value;
-			}
-			//合致の結果を返す
-			return match;
-		});
-		//----------------------------------------------------------------------
-		//合致する要素がない場合は値を登録する
-		if ( element === void( 0 )) {
-			this.caches.push({
-				x, y, level, value, timestamp,
-			});
+		//既存要素があれば挿入順をリセットするため一旦取り除く
+		const index	= this.indexOf( x, y, level );
+		if ( index !== -1 ) {
+			this.caches.splice( index, 1 );
 		}
 		//----------------------------------------------------------------------
-		//キャッシュを掃除する
-		this.clean();
+		//末尾（最新）に登録する
+		this.caches.push({ x, y, level, value });
 		//----------------------------------------------------------------------
-		//参照を返す
-		return this;
-	}
-
-	//**************************************************************************
-	//キャッシュを掃除
-	/*
-		@return	this
-	*/
-	clean () {
-		//----------------------------------------------------------------------
-		//キャッシュをタイムスタンプの降順で並べて指定件数分以降の要素を破棄
-		this.caches.sort(( a, b ) => {
-			return b.timestamp - a.timestamp;
-		}).splice( this.size );
+		//上限を超えた分は先頭（最古）から破棄する
+		if ( this.caches.length > this.size ) {
+			this.caches.shift();
+		}
 		//----------------------------------------------------------------------
 		//参照を返す
 		return this;
@@ -351,6 +335,10 @@ export class NumericalPngTerrainProvider {
 
 	//**************************************************************************
 	//タイルを要求して標高データを作って返す
+	//キャッシュにはterrain配列（軽量）のみを保持し、量子化・法線計算は毎回やり直す。
+	//これはCesium側でTerrainDataのバッファがワーカーへ転送（detach）される可能性があり、
+	//生成済みインスタンスをそのまま使い回すのは安全でないための設計。
+	//取得に失敗した場合は空データ（長さ0のterrain配列）としてキャッシュし、再取得を防ぐ。
 	/*
 		@param	number	: x coordinate for tile
 		@param	number	: y coordinate for tile
@@ -364,33 +352,37 @@ export class NumericalPngTerrainProvider {
 	): Promise < object > {
 		//----------------------------------------------------------------------
 		//キャッシュを探す
-		const cached	= this.cacheObj.get( x, y, level );
+		const cachedTerrain	= this.cacheObj.get( x, y, level ) as Float32Array | undefined;
 		//----------------------------------------------------------------------
 		//キャッシュの有無で分岐
-		if ( cached !== void( 0 )) {
-			//キャッシュがあればそれを返す
-			return cached;
+		if ( cachedTerrain !== void( 0 )) {
+			//キャッシュがあれば（複製した上で）量子化して返す
+			return cachedTerrain.length === 0
+			? this.emptyHeightmap()
+			: this.createQuantizedMeshData( x, y, level, cachedTerrain.slice());
 		} else {
-			//キャッシュがなければデータを作ってキャッシュし、作ったデータを返す
-			const cache	= await this.createTileGeometry( x, y, level );
-			this.cacheObj.add( x, y, level, cache );
-			return cache;
+			//キャッシュがなければterrainを作ってキャッシュし、量子化した結果を返す
+			const terrain	= await this.createTerrain( x, y, level );
+			this.cacheObj.add( x, y, level, terrain ?? new Float32Array( 0 ));
+			return terrain === void( 0 )
+			? this.emptyHeightmap()
+			: this.createQuantizedMeshData( x, y, level, terrain );
 		}
 	}
 
 	//**************************************************************************
-	//標高データを作る
+	//標高terrain配列を作る
 	/*
 		@param	number	: x coordinate for tile
 		@param	number	: y coordinate for tile
 		@param	number	: zoom level for tile
-		@return	mixed	: QuantizedMeshTerrainData or HeightmapTerrainData instance
+		@return	mixed	: terrain配列 または取得失敗時はundefined
 	*/
-	async createTileGeometry (
+	async createTerrain (
 		x: number,
 		y: number,
 		level: number
-	): Promise < QuantizedMeshTerrainData | HeightmapTerrainData > {
+	): Promise < Float32Array | undefined > {
 		//----------------------------------------------------------------------
 		//主タイルに右、下、右下の各タイルを並べたcanvasを作る
 		const tile	= await this.createSynthesizedTile( x, y, level );
@@ -402,20 +394,16 @@ export class NumericalPngTerrainProvider {
 			const context	= tile.getContext( '2d' );
 			//context取得成否で分岐
 			if ( context instanceof CanvasRenderingContext2D ) {
-				//取得成功時はterrainを作り標高データを生成して返す
-				const terrain	= this.imageDataToTerrain(
+				//取得成功時はterrainを作って返す
+				return this.imageDataToTerrain(
 					context.getImageData( 0, 0, tile.width, tile.height ),
 					this.heightScale
 				);
-				return this.createQuantizedMeshData( x, y, level, terrain );
-			} else {
-				//取得失敗時は空の標高マップを返す
-				return this.emptyHeightmap();
 			}
-		} else {
-			//canvas以外が返された場合は空の標高マップを返す
-			return this.emptyHeightmap();
 		}
+		//----------------------------------------------------------------------
+		//取得失敗時はundefinedを返す
+		return void( 0 );
 	}
 
 	//**************************************************************************
@@ -566,11 +554,9 @@ export class NumericalPngTerrainProvider {
 				const srcX	= Math.round( x * wInterval );
 				//取得元のインデックス値（rgba4要素で4倍）
 				const index	= ( srcY * imageData.width + srcX ) * 4;
-				//rgba配列を取得
-				const rgba	= imageData.data.slice( index, index + 4 );
-				//terrainに標高値をセット
+				//terrainに標高値をセット（配列を複製せず直接インデックス参照する）
 				terrain[ y * this.heightmapWidth + x ]	= this.rgbaToHeight(
-					rgba, scale
+					imageData.data, index, scale
 				);
 			}
 		}
@@ -580,25 +566,28 @@ export class NumericalPngTerrainProvider {
 	}
 
 	//**************************************************************************
-	//rgba配列から標高を求める
+	//rgbaデータから標高を求める
 	/*
-		@param	typed	: typed rgba
+		@param	typed	: rgba配列の元データ
+		@param	number	: 参照するインデックス（このインデックスにr、+1にg、+2にb、+3にaがある）
 		@param	number	: heightScale
 		@return	number	: elevation
 	*/
 	rgbaToHeight (
-		rgba: Uint8ClampedArray,
+		data: Uint8ClampedArray,
+		index: number,
 		scale: number
 	): number {
 		//----------------------------------------------------------------------
 		//符号付きでピクセル値を計算
-		const value	= rgba[0] * 65536 + rgba[1] * 256 + rgba[2] - (
-			rgba[0] < 128 ? 0 : 16777216
+		const r	= data[ index ];
+		const value	= r * 65536 + data[ index + 1 ] * 256 + data[ index + 2 ] - (
+			r < 128 ? 0 : 16777216
 		);
 		//----------------------------------------------------------------------
 		//無効値を0にして、スケールを乗じて返す
 		return (
-			rgba[3] === 0 || value === this.heightInvalidValue ? 0 : value
+			data[ index + 3 ] === 0 || value === this.heightInvalidValue ? 0 : value
 		) * scale;
 	}
 
@@ -650,9 +639,14 @@ export class NumericalPngTerrainProvider {
 		const error	= this.getLevelMaximumGeometricError( level );
 		const skirtHeight	= error * 5;
 		//----------------------------------------------------------------------
-		//標高値の最小と最大を決める
-		const minimumHeight	= Math.min.apply( this, Array.from( terrain ));
-		const maximumHeight	= Math.max.apply( this, Array.from( terrain ));
+		//標高値の最小と最大を決める（1パスで走査：大きい配列でのスタックオーバーフロー回避）
+		let minimumHeight	= Infinity;
+		let maximumHeight	= -Infinity;
+		for ( let i = 0; i < terrain.length; i ++ ) {
+			const value	= terrain[ i ];
+			if ( value < minimumHeight ) minimumHeight	= value;
+			if ( value > maximumHeight ) maximumHeight	= value;
+		}
 		//----------------------------------------------------------------------
 		//量子化用の係数を決める
 		const factor	= quantizedMax / ( size - 1 );
