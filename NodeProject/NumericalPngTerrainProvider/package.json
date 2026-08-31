@@ -24,6 +24,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "@cesium/engine": "^3.0.1",
     "cesium": "^1.107.2"
   }
 }
