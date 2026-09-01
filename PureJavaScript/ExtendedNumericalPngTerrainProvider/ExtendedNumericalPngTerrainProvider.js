@@ -58,15 +58,17 @@ class ExtendedNumericalPngTerrainProvider extends NumericalPngTerrainProvider {
 	}
 
 	//**************************************************************************
-	//既存メソッドの上書き（requestTileGeometryから呼ばれる）
+	//既存メソッドの上書き（base側のrequestTileGeometryから呼ばれる）
 	//標高タイルに加えてジオイド高タイルを加算する可能性があるためその過程を追加
+	//base側の設計変更（propser.md 1）に合わせ、量子化済みインスタンスではなく
+	//terrain配列（またはundefined）を返す。キャッシュ・量子化はbase側が担当する。
 	/*
 		@param	number	: x coordinate for tile
 		@param	number	: y coordinate for tile
 		@param	number	: zoom level for tile
-		@return	mixed	: QuantizedMeshTerrainData or HeightmapTerrainData instance
+		@return	mixed	: terrain配列 または取得失敗時はundefined
 	*/
-	async createTileGeometry ( x, y, level ) {
+	async createTerrain ( x, y, level ) {
 		//----------------------------------------------------------------------
 		//合成canvasを作る処理が標高とジオイド高で必要となるためプロミス配列を作る
 		//標高処理は必須であるためデフォルトで追加
@@ -90,8 +92,8 @@ class ExtendedNumericalPngTerrainProvider extends NumericalPngTerrainProvider {
 					!( values[0] instanceof HTMLCanvasElement )
 					&& !( values[1] instanceof HTMLCanvasElement )
 				) {
-					//標高とジオイド高の両方とも取得できなかった場合は空のheightmapを返す
-					return this.emptyHeightmap();
+					//標高とジオイド高の両方とも取得できなかった場合はundefinedを返す
+					return void( 0 );
 				} else if (
 					values[0] instanceof HTMLCanvasElement
 					&& values[1] instanceof HTMLCanvasElement
@@ -101,8 +103,8 @@ class ExtendedNumericalPngTerrainProvider extends NumericalPngTerrainProvider {
 						this.heightScale,
 						this.geoidHeightScale
 					];
-					//terrainを作る
-					const terrain	= values.map(( value, index ) => {
+					//terrainを作って返す
+					return values.map(( value, index ) => {
 						//それぞれで処理
 						//imageDataを取得してバイリニア単位に応じて処理を振り分けて結果を返す
 						const imageData	= value.getContext( '2d' ).getImageData(
@@ -119,41 +121,35 @@ class ExtendedNumericalPngTerrainProvider extends NumericalPngTerrainProvider {
 							return value + cur[index];
 						});
 					});
-					//得られたterrainを量子化して返す
-					return this.createQuantizedMeshData( x, y, level, terrain );
 				} else if ( values[0] instanceof HTMLCanvasElement ) {
 					//標高のみ取得できた場合
 					//imageDataを取得してバイリニア単位に応じて分岐処理して結果を返す
 					const imageData	= values[0].getContext( '2d' ).getImageData(
 						0, 0, values[0].width, values[0].height
 					);
-					const terrain	= values[0].unitSize === 1
+					return values[0].unitSize === 1
 					? this.imageDataToTerrain( imageData, this.heightScale )
 					: this.imageDataToTerrainBilineard(
 						imageData, this.heightScale, values[0].unitSize
 					);
-					//得られたterrainを量子化して返す
-					return this.createQuantizedMeshData( x, y, level, terrain );
 				} else {
 					//ジオイド高のみ取得できた場合
 					//imageDataを取得してバイリニア単位に応じて分岐処理して結果を返す
 					const imageData	= values[1].getContext( '2d' ).getImageData(
 						0, 0, values[1].width, values[1].height
 					);
-					const terrain	= values[1].unitSize === 1
+					return values[1].unitSize === 1
 					? this.imageDataToTerrain( imageData, this.geoidHeightScale )
 					: this.imageDataToTerrainBilineard(
 						imageData, this.geoidHeightScale, values[1].unitSize
 					);
-					//得られたterrainを量子化して返す
-					return this.createQuantizedMeshData( x, y, level, terrain );
 				}
 			}
 		);
 	}
 
 	//**************************************************************************
-	//既存メソッドの拡張（createTileGeometryから呼ばれる）
+	//既存メソッドの拡張（createTerrainから呼ばれる）
 	//第3引数typeを追加し、標高とジオイド高で処理を分岐可能となるよう変更
 	//主、右、下、右下の合成タイルを作る
 	/*
@@ -418,23 +414,21 @@ class ExtendedNumericalPngTerrainProvider extends NumericalPngTerrainProvider {
 	//**************************************************************************
 	//フラット補間（ピクセル単純拡大）
 	//標高タイルは隣接タイルが同じズームレベルとは限らないため一旦これを使う必要あり
+	//ピクセル単位でfillRectを呼ぶ代わりに、imageSmoothingを無効化した1回の
+	//drawImageで拡大する（ニアレストネイバー、結果は従来のピクセル単純拡大と同じ）
 	/*
 		@param	context	: to fill
 		@param	canvas	: source for filling
 	*/
 	fillFlat ( context, cropped ) {
-		const size	= context.canvas.width / cropped.width;
-		const imageData	= cropped.getContext( '2d' ).getImageData(
-			0, 0, cropped.width, cropped.height
+		const smoothing	= context.imageSmoothingEnabled;
+		context.imageSmoothingEnabled	= false;
+		context.drawImage(
+			cropped,
+			0, 0, cropped.width, cropped.height,
+			0, 0, context.canvas.width, context.canvas.height
 		);
-		for ( let y = 0; y < cropped.height; y += 1 ) {
-			for ( let x = 0; x < cropped.width; x += 1 ) {
-				const index	= y * cropped.width + x;
-				const rgba	= imageData.data.slice( index * 4, index * 4 + 4 );
-				context.fillStyle	= `rgba(${rgba.toString()})`;
-				context.fillRect( x * size, y * size, size, size );
-			}
-		}
+		context.imageSmoothingEnabled	= smoothing;
 	}
 
 	//**************************************************************************
@@ -449,13 +443,12 @@ class ExtendedNumericalPngTerrainProvider extends NumericalPngTerrainProvider {
 		//間引き間隔
 		const dstInterval	= this.tileWidth / ( this.heightmapWidth - 1 );
 		//----------------------------------------------------------------------
-		//バイリニアで使用しうる標高（四隅）を最初に求めておく
+		//バイリニアで使用しうる標高（四隅）を最初に求めておく（配列を複製せず直接インデックス参照する）
 		const elevations	= new Float32Array(( this.tileWidth + 1 ) ** 2 );
 		for ( let y = 0, maxY = this.tileWidth + 1; y < maxY; y += srcInterval ) {
 			for ( let x = 0, maxX = this.tileWidth + 1; x < maxX; x += srcInterval ) {
 				const index	= y * ( this.tileWidth + 1 ) + x;
-				const rgba	= imageData.data.slice( index * 4, index * 4 + 4 );
-				elevations[ index ]	= this.rgbaToHeight( rgba, scale );
+				elevations[ index ]	= this.rgbaToHeight( imageData.data, index * 4, scale );
 			}
 		}
 		// //----------------------------------------------------------------------
