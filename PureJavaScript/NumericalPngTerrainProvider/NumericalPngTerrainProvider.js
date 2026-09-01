@@ -7,8 +7,8 @@
 /*!
  *	@name	: NumericalPngTerrainProvider
  *	@description	: Terrain provider for numerical png tile of elevation.
- *	@version	: 2.0.0
- *	@released	: 20231120
+ *	@version	: 2.1.0
+ *	@released	: 20260901
  *	@required	: Cesium
  *	@author	: Kaoru KITAO
  *	@email	: kaoru@kitao.net
